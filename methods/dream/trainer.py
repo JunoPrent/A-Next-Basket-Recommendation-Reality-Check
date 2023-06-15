@@ -285,6 +285,7 @@ class Trainer(object):
         result['recall10'] = recall(scores, tgt_labels, top_k=10)
         result['recall20'] = recall(scores, tgt_labels, top_k=20)
         result['recall40'] = recall(scores, tgt_labels, top_k=40)
+        result['ndcg5'] = ndcg(scores, tgt_labels, top_k=5)
         result['ndcg10'] = ndcg(scores, tgt_labels, top_k=10)
         result['ndcg20'] = ndcg(scores, tgt_labels, top_k=20)
         result['ndcg40'] = ndcg(scores, tgt_labels, top_k=40)
