@@ -297,7 +297,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='dunnhumby', help='Dataset')
     parser.add_argument('--fold_id', type=int, default=0, help='x')
     parser.add_argument('--loss_mode', type=int, default=0, help='x')
-    parser.add_argument('--attention', type=int, default=0)
+    parser.add_argument('--attention', type=str, default='attention')
     args = parser.parse_args()
     dataset = args.dataset
     fold_id = args.fold_id

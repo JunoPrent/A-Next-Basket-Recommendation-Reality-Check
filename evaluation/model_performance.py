@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import argparse
 import os
+import ast
 
 def get_repeat_eval(pred_folder, dataset, size, fold_list, file):
     history_file = f'../dataset/{dataset}_history.csv'
@@ -19,10 +20,9 @@ def get_repeat_eval(pred_folder, dataset, size, fold_list, file):
     a_recall_explore = []
     a_hit_repeat = []
     a_hit_explore = []
-
-    for ind in fold_list:
+    for ind in ast.literal_eval(fold_list):
         keyset_file = f'../keyset/{dataset}_keyset_{ind}.json'
-        pred_file = f'{pred_folder}/{dataset}_pred{ind}.json'
+        pred_file = f'{pred_folder}/{dataset}_attention_pred{ind}.json'
         with open(keyset_file, 'r') as f:
             keyset = json.load(f)
         with open(pred_file, 'r') as f:
@@ -78,26 +78,29 @@ def get_repeat_eval(pred_folder, dataset, size, fold_list, file):
         a_recall_explore.append(np.mean(recall_explore))
         a_hit_repeat.append(np.mean(hit_repeat))
         a_hit_explore.append(np.mean(hit_explore))
-        print(ind, np.mean(recall))
-        file.write(str(ind)+' '+str(np.mean(recall))+'\n')
-
+        if ind == 0:
+            print(f'fold_id,    recall,    ndcg,    phr')
+            file.write(f'fold_id,    recall,    ndcg,    phr\n')
+        print(f'{ind},    {np.mean(recall):.10f},    {np.mean(ndcg): .10f},    {np.mean(hit):.10f}')
+        file.write(f'{ind},    {np.mean(recall):.10f},    {np.mean(ndcg): .10f},    {np.mean(hit):.10f}\n')
+    print('average over folds:')
     print('basket size:', size)
-    print('recall, ndcg, hit:', np.mean(a_recall), np.mean(a_ndcg), np.mean(a_hit))
+    print('recall, ndcg, phr:', np.mean(a_recall), np.mean(a_ndcg), np.mean(a_hit))
     print('repeat-explore ratio:', np.mean(a_repeat_ratio), np.mean(a_explore_ratio))
     print('repeat-explore recall', np.mean(a_recall_repeat), np.mean(a_recall_explore))
-    print('repeat-explore hit:', np.mean(a_hit_repeat), np.mean(a_hit_explore))
+    print('repeat-explore phr:', np.mean(a_hit_repeat), np.mean(a_hit_explore))
 
     file.write('basket size: ' + str(size) + '\n')
-    file.write('recall, ndcg, hit: '+ str(np.mean(a_recall)) +' ' +str(np.mean(a_ndcg))+' '+ str(np.mean(a_hit)) +'\n')
+    file.write('recall, ndcg, phr: '+ str(np.mean(a_recall)) +' ' +str(np.mean(a_ndcg))+' '+ str(np.mean(a_hit)) +'\n')
     file.write('repeat-explore ratio:'+ str(np.mean(a_repeat_ratio)) +' ' +str(np.mean(a_explore_ratio)) +'\n')
     file.write('repeat-explore recall' + str(np.mean(a_recall_repeat)) + ' ' + str(np.mean(a_recall_explore)) +'\n')
-    file.write('repeat-explore hit:' + str(np.mean(a_hit_repeat)) + ' ' + str(np.mean(a_hit_explore)) + '\n')
+    file.write('repeat-explore phr:' + str(np.mean(a_hit_repeat)) + ' ' + str(np.mean(a_hit_explore)) + '\n')
     return np.mean(a_recall)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--pred_folder', type=str, required=True, help='x')
-    parser.add_argument('--fold_list', type=list, required=True, help='x')
+    parser.add_argument('--fold_list', type=str, required=True, help='x')
     args = parser.parse_args()
     pred_folder = args.pred_folder
     fold_list = args.fold_list
@@ -105,5 +108,6 @@ if __name__ == '__main__':
     f = open(eval_file, 'w')
     for dataset in ['dunnhumby', 'tafeng', 'instacart']:
         f.write('############'+dataset+'########### \n')
+        print(dataset)
         get_repeat_eval(pred_folder, dataset, 10, fold_list, f)
         get_repeat_eval(pred_folder, dataset, 20, fold_list, f)
