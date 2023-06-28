@@ -1,3 +1,5 @@
+For RQ3, extensions to the code were made in evaluation/model_performance.py and methods/dream/basket_dataloader.py. The start and end of all new sections of code are marked with comments starting with '###'. No original code was removed from these files.
+
 # Source Code and Appendix for "A Next Basket Recommendation Reality Check"
 
 ## Required packages
