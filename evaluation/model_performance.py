@@ -128,10 +128,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     pred_folder = args.pred_folder
     fold_list = args.fold_list
-    eval_file = 'eval_results.txt'
+    eval_file = 'eval_dataset_results.txt'
+    print("The adjusted version is being executed")
     f = open(eval_file, 'w')
     for dataset in ['dunnhumby', 'tafeng', 'instacart']:
         f.write('############'+dataset+'########### \n')
         print(dataset)
         get_repeat_eval(pred_folder, dataset, 10, fold_list, f)
         get_repeat_eval(pred_folder, dataset, 20, fold_list, f)
+
+

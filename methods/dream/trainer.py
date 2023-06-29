@@ -304,7 +304,7 @@ if __name__ == '__main__':
     attention = args.attention
 
     train_setting = args.dataset
-    with open('dream/'+dataset+'conf.json', 'r') as f:
+    with open('methods/dream/'+dataset+'conf.json', 'r') as f:
         train_config = json.load(f)
     train_config['valid_metric'] = "recall20"
     train_config['loss_mode'] = loss_mode
