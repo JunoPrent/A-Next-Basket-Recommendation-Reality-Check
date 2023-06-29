@@ -5,6 +5,12 @@ import argparse
 import os
 import ast
 
+### Start of extension
+## Returns the average amount of baskets per user of a data set
+def avg_dataset_baskets(data_history_dict):
+    return round(np.mean([len(data_history_dict[u][1:-1]) for u in data_history_dict.keys()]))
+### End of extension
+
 def get_repeat_eval(pred_folder, dataset, size, fold_list, file):
     history_file = f'../dataset/{dataset}_history.csv'
     truth_file = f'../jsondata/{dataset}_future.json'
@@ -20,6 +26,7 @@ def get_repeat_eval(pred_folder, dataset, size, fold_list, file):
     a_recall_explore = []
     a_hit_repeat = []
     a_hit_explore = []
+
     for ind in ast.literal_eval(fold_list):
         keyset_file = f'../keyset/{dataset}_keyset_{ind}.json'
         pred_file = f'{pred_folder}/{dataset}_attention_pred{ind}.json'
@@ -38,10 +45,26 @@ def get_repeat_eval(pred_folder, dataset, size, fold_list, file):
         hit_repeat = []
         hit_explore = []
 
+
+### Start of extension
+        with open(f'../jsondata/{dataset}_history.json') as f:
+            data_history_dict = json.load(f)
+        
+        threshold = avg_dataset_baskets(data_history_dict)
+### End of extension
+
         for user in keyset['test']:
+            ### Start of extension
+            user_baskets = data_history_dict[user][1:-1]
+            
+            ## Use >= to get below average users, < for above average, comment out
+            ## next two lines for all users of test set
+            # if len(user_baskets) >= threshold:
+            #     continue
+            ### End of extension
+
             pred = data_pred[user]
             truth = data_truth[user][1]
-            # print(user)
             user_history = data_history[data_history['user_id'].isin([int(user)])]
             repeat_items = list(set(user_history['product_id']))
             truth_repeat = list(set(truth)&set(repeat_items)) # might be none
@@ -69,6 +92,7 @@ def get_repeat_eval(pred_folder, dataset, size, fold_list, file):
                 u_hit_explore = get_HT(truth_explore, pred, size)
                 recall_explore.append(u_recall_explore)
                 hit_explore.append(u_hit_explore)
+
         a_ndcg.append(np.mean(ndcg))
         a_recall.append(np.mean(recall))
         a_hit.append(np.mean(hit))
@@ -104,10 +128,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     pred_folder = args.pred_folder
     fold_list = args.fold_list
-    eval_file = 'eval_results.txt'
+    eval_file = 'eval_dataset_results.txt'
+    print("The adjusted version is being executed")
     f = open(eval_file, 'w')
     for dataset in ['dunnhumby', 'tafeng', 'instacart']:
         f.write('############'+dataset+'########### \n')
         print(dataset)
         get_repeat_eval(pred_folder, dataset, 10, fold_list, f)
         get_repeat_eval(pred_folder, dataset, 20, fold_list, f)
+
+

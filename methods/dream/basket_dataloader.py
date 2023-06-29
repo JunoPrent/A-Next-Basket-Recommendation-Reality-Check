@@ -3,6 +3,11 @@ from torch.utils.data import Dataset, DataLoader
 import json
 from candidates import *
 import os
+### Start of extension
+## Returns the average amount of baskets per user of a data set
+def avg_dataset_baskets(data_history_dict):
+    return round(np.mean([len(data_history_dict[u][1:-1]) for u in data_history_dict.keys()]))
+### End of extension
 
 class BasketDataset(Dataset):
 
@@ -32,7 +37,22 @@ class BasketDataset(Dataset):
         self.data_addorder = []
         self.tgt = []
         self.tgt_addorder = []
+        
+        ### Start of extension
+        ## Use this to get users with at least the average amount of baskets
+        threshold = avg_dataset_baskets(data_all)
+
+        ## Or use this to get the top 20% most frequently ordering users
+        ## Use value 13 for Dunnhumby, 8 for TaFeng, 20 for Instacart
+        # threshold = 13
+        ### End of extension
+
         for user in data_config[mode]:
+            ### Start of extension
+            # if len(data_all[user][1:-1]) <= threshold and mode in ['train', 'val']:
+            #     continue
+            ### End of extension
+
             self.data.append(data_all[user][1:-1])
             self.data_addorder.append(train_addorder_all[user][1:-1])
             # use index 1 since future files only contain 1 basket per user
