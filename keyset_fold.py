@@ -8,9 +8,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='dunnhumby', help='Dataset')
     parser.add_argument('--fold_id', type=int, default=0, help='x')
+    parser.add_argument('--use_item_order', action='store_true')
     args = parser.parse_args()
     dataset = args.dataset
     fold_id = args.fold_id
+    use_item_order = args.use_item_order
 
     data_future = pd.read_csv(f'dataset/{dataset}_future.csv')
     data_history = pd.read_csv(f'dataset/{dataset}_history.csv')
@@ -28,6 +30,11 @@ if __name__ == '__main__':
     item_num = max(data['product_id'].tolist())+1
     keyset_dict = dict()
     keyset_dict['item_num'] = item_num
+    ##### new code ######
+    if use_item_order:
+        max_addorder =  max(data['add_to_cart_order'].tolist())+1
+        keyset_dict['max_addorder'] = max_addorder
+    #####################
     keyset_dict['train'] = train_user
     keyset_dict['val'] = val_user
     keyset_dict['test'] = test_user

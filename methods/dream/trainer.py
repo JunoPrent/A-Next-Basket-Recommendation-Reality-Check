@@ -39,7 +39,13 @@ class Trainer(object):
         self.data_config_file = config['data_config_file']
         self.checkpoint_dir = config['checkpoint_dir']
         ensure_dir(self.checkpoint_dir)
-        saved_model_file = '{}-{}.pth'.format(self.config['model_name'], get_local_time())
+        # store 'itemorder' in model name if used
+        if self.config['use_item_order']:
+            use_item_order_str = 'itemorder'
+        else:
+            use_item_order_str = ''
+        saved_model_file = '{}{}-{}.pth'.format(self.config['model_name'], use_item_order_str, get_local_time())
+        print('Model store location:', saved_model_file)
         self.saved_model_file = os.path.join(self.checkpoint_dir, saved_model_file)
 
         # flags to record the training process
@@ -77,15 +83,16 @@ class Trainer(object):
 
         # data prepare
         total_batch_cnt = int(train_data.__len__()/self.batch_size)
-        for batch_id in range(total_batch_cnt):
+        for batch_id in tqdm(range(total_batch_cnt)):
             candidates = dict()
-            data_train, tgt_train, repeat_data, explore_data = \
+            # addorder of target is not used for training
+            data_train, tgt_train, repeat_data, explore_data, data_addorder_train, _ = \
                 train_data.get_batch_data(batch_id*self.batch_size, (batch_id+1)*self.batch_size)
             candidates['repeat']=repeat_data
             candidates['explore']=explore_data
             # train model according to the loss
             self.optimizer.zero_grad()
-            losses = loss_func(data_train, tgt_train, candidates)
+            losses = loss_func(data_train, tgt_train, data_addorder_train, candidates)
             # print(losses)
             if isinstance(losses, tuple):
                 loss = sum(losses)
@@ -220,8 +227,8 @@ class Trainer(object):
                     # bigger=self.valid_metric_bigger #whether the bigger the better
                 )
                 valid_end_time = time()
-                valid_score_output = "epoch %d evaluating [time: %.2fs, valid_score: %f]" % \
-                                     (epoch_idx, valid_end_time - valid_start_time, valid_score)
+                valid_score_output = "epoch %d evaluating [time: %.2fs, valid_score (%s): %f]" % \
+                                     (epoch_idx, valid_end_time - valid_start_time, self.valid_metric, valid_score)
                 valid_result_output = 'valid result: \n' + dict2str(valid_result)
                 if verbose:
                     print(valid_score_output)
@@ -276,10 +283,11 @@ class Trainer(object):
         self.model.eval()
 
         candidates = dict()
-        data_train, tgt_train, repeat_data, explore_data = eval_data.get_batch_data(0, eval_data.__len__())
+        # addorder of target is not used for evaluation
+        data_train, tgt_train, repeat_data, explore_data, data_addorder_train, _ = eval_data.get_batch_data(0, eval_data.__len__())
         candidates['repeat'] = repeat_data
         candidates['explore'] = explore_data
-        scores = self.model.forward(data_train, candidates)
+        scores = self.model.forward(data_train, data_addorder_train, candidates)
         tgt_labels = get_label_tensor(tgt_train, self.device, max_index=eval_data.total_num)
         result = dict()
         result['recall10'] = recall(scores, tgt_labels, top_k=10)
@@ -297,29 +305,38 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='dunnhumby', help='Dataset')
     parser.add_argument('--fold_id', type=int, default=0, help='x')
     parser.add_argument('--loss_mode', type=int, default=0, help='x')
-    parser.add_argument('--attention', type=str, default='attention')
+    parser.add_argument('--use_attention', action='store_true')
+    # added arugment for specifying the usage of the item order information
+    parser.add_argument('--use_item_order', action='store_true')
     args = parser.parse_args()
     dataset = args.dataset
     fold_id = args.fold_id
     loss_mode = args.loss_mode
-    attention = args.attention
-
+    use_attention = args.use_attention
     train_setting = args.dataset
     with open('dream/'+dataset+'conf.json', 'r') as f:
         train_config = json.load(f)
     train_config['valid_metric'] = "recall20"
     train_config['loss_mode'] = loss_mode
     train_config['data_config_file'] = train_config['data_config_file']+str(fold_id)+'.json'
-    train_config['attention'] = args.attention
-    train_config['model_name'] = f"{dataset}-recall20-{loss_mode}-{fold_id}-{attention}-"
-
+    train_config['attention'] = use_attention
+    if use_attention:
+        attention_str = 'attention'
+    else:
+        attention_str = '0'
+    train_config['model_name'] = f"{dataset}-recall20-{loss_mode}-{fold_id}-{attention_str}-"
+    # store the item_order requirement in the configuration file
+    train_config['use_item_order'] = args.use_item_order
     with open(train_config['data_config_file'], 'r') as f:
         dataset_config = json.load(f)
     print(train_config['data_config_file'])
     sys.stdout.flush()
     train_config['device'] = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print('Init training dataset')
     basket_dataset = BasketDataset(train_config, mode='train')
+    print('Init validation dataset')
     validate_dataset = BasketDataset(train_config, mode='val')
+    print('Init model')
     model = NBRNet(train_config, dataset_config)
     print('Device:', train_config['device'])
     sys.stdout.flush()

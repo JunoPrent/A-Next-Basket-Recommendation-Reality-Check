@@ -12,16 +12,30 @@ def get_repeat_candidates(data_train):
         repeat.append(user_item)
     return repeat
 
+##### old implementation #####
+# def get_explore_candidates(data_train, total_count):
+#     explore = []
+#     total_basket = [item for item in range(total_count)]
+#     for basket_seq in data_train:
+#         explore_item = total_basket.copy()
+#         for basket in basket_seq:
+#             for item in basket:
+#                 if item in explore_item:
+#                     explore_item.remove(item)
+#         explore.append(explore_item)
+#     return explore
+
+##### optimized new code #####
 def get_explore_candidates(data_train, total_count):
     explore = []
-    total_basket = [item for item in range(total_count)]
+    # use sets for subtracting all the items a user has in their basket from all possible items
+    total_basket = set(range(total_count))
     for basket_seq in data_train:
         explore_item = total_basket.copy()
         for basket in basket_seq:
-            for item in basket:
-                if item in explore_item:
-                    explore_item.remove(item)
-        explore.append(explore_item)
+            explore_item = explore_item - set(basket)
+        # conver the set to list and sort such that the same order is present as the old implementation
+        explore.append(sorted(list(explore_item)))
     return explore
 
 def get_item_candidates(data_train, total_count, candidates_count):

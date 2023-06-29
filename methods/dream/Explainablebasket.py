@@ -57,7 +57,8 @@ class NBRNet(nn.Module):
 
         # dataset features
         self.n_items = dataset['item_num']
-
+        # get the maxium position of addorder for the embedding
+        self.max_addorder = dataset['max_addorder']
         # model parameters
         self.embedding_size = config['embedding_size']
         self.embedding_type = config['embedding_type']
@@ -66,9 +67,10 @@ class NBRNet(nn.Module):
         self.max_len = config['max_len'] # basket len
         self.loss_mode = config['loss_mode']
         self.loss_uplift = config['loss_uplift']
+        self.use_item_order = config['use_item_order']
         # define layers
         # self.item_embedding = nn.Embedding(self.n_items, self.embedding_size, self.max_len)
-        self.basket_embedding = Basket_Embedding(self.device, self.embedding_size, self.n_items, self.max_len, self.embedding_type)
+        self.basket_embedding = Basket_Embedding(self.device, self.embedding_size, self.n_items, self.max_len, self.use_item_order, self.max_addorder, self.embedding_type)
         self.gru = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True)
         self.attention = config['attention']
         self.decoder = Decoder(
@@ -96,13 +98,13 @@ class NBRNet(nn.Module):
             if module.bias is not None:
                 constant_(module.bias.data, 0)
 
-    def forward(self, basket_seq, candidates_basket):
+    def forward(self, basket_seq, addorder_seq, candidates_basket):
         basket_seq_len = []
         for b in basket_seq:
             basket_seq_len.append(len(b))
         basket_seq_len = torch.as_tensor(basket_seq_len).to(self.device)
 
-        batch_basket_seq_embed = self.basket_embedding(basket_seq)
+        batch_basket_seq_embed = self.basket_embedding(basket_seq, addorder_seq)
 
         all_memory, _ = self.gru(batch_basket_seq_embed)
         last_memory = self.gather_indexes(all_memory, basket_seq_len-1)
@@ -142,8 +144,8 @@ class NBRNet(nn.Module):
         return loss/batch_size # compute average
 
 
-    def global_loss(self, basket_seq, tgt_basket, cand_basket):
-        prediction = self.forward(basket_seq, cand_basket)
+    def global_loss(self, basket_seq, tgt_basket, addorder_seq, cand_basket):
+        prediction = self.forward(basket_seq, addorder_seq, cand_basket)
         cand = [l1+l2 for l1, l2 in zip(cand_basket['repeat'], cand_basket['explore'])]
         loss = self.get_batch_loss(prediction,
                                    tgt_basket,
@@ -152,8 +154,8 @@ class NBRNet(nn.Module):
                                    self.device) #the multilabel loss here
         return loss
 
-    def calculate_loss(self, basket_seq, tgt_basket, cand_basket):
-        global_loss = self.global_loss(basket_seq, tgt_basket, cand_basket)
+    def calculate_loss(self, basket_seq, tgt_basket, addorder_seq, cand_basket):
+        global_loss = self.global_loss(basket_seq, tgt_basket, addorder_seq, cand_basket)
         return global_loss
 
 
@@ -166,37 +168,49 @@ class NBRNet(nn.Module):
 # Provide basket embedding solution: max, mean, sum
 class Basket_Embedding(nn.Module):
 
-    def __init__(self, device, hidden_size, item_num, max_len, type): # hidden_size is the embedding_size
+    def __init__(self, device, hidden_size, item_num, max_len, use_item_order, max_addorder, type): # hidden_size is the embedding_size
         super(Basket_Embedding, self).__init__()
         self.hidden_size = hidden_size
         self.n_items = item_num
         self.max_len = max_len
         self.type = type
         self.device = device
+        self.use_item_order = use_item_order
         self.item_embedding = nn.Embedding(item_num, hidden_size) # padding_idx=0, not sure???
+        # new code: create a separate embedding layer for the add order of the items in the basket
+        if self.use_item_order:
+            self.addorder_embedding = nn.Embedding(max_addorder, hidden_size)  # Embedding for positional information
 
-    def forward(self, batch_basket):
-        # need to padding here
+    def forward(self, batch_basket, batch_addorder):
+        ##### new and optimized code #####
         batch_embed_seq = [] # batch * seq_len * hidden size
-        for basket_seq in batch_basket:
+        for basket_seq, add_seq in zip(batch_basket, batch_addorder):
             embed_baskets = []
-            for basket in basket_seq:
-                basket = torch.LongTensor(basket).resize_(1, len(basket))
-                basket = Variable(basket).to(self.device)
+            for basket, addorder in zip(basket_seq, add_seq):
+                # add new dimension for embedding lookup
+                basket = torch.LongTensor(basket).unsqueeze(0).to(self.device)
+                # get item embedding vector and get rid of added dimension
                 basket = self.item_embedding(basket).squeeze(0)
-                # embed_b = basket_pool(basket, 1, self.type)
+                if self.use_item_order:
+                    addorder = torch.LongTensor(addorder).unsqueeze(0).to(self.device)
+                    addorder = self.addorder_embedding(addorder).squeeze(0)
+                    # combine item embedding with itemorder (addorder) embedding
+                    basket += addorder
+                # pooling operation
                 if self.type == 'mean':
                     embed_baskets.append(torch.mean(basket, 0))
                 if self.type == 'max':
                     embed_baskets.append(torch.max(basket, 0)[0])
                 if self.type == 'sum':
                     embed_baskets.append(torch.sum(basket, 0))
-            # padding the seq
-            pad_num = self.max_len -len(embed_baskets)
-            for ind in range(pad_num):
-                embed_baskets.append(torch.zeros(self.hidden_size).to(self.device))
+            # optimized padding
+            pad_num = self.max_len - len(embed_baskets)
+            # create tensor with all padding rows for the basket
+            paddings = torch.zeros(pad_num, self.hidden_size).to(self.device)
+            # convert list with item embeddings to tensor with same dimensions
             embed_seq = torch.stack(embed_baskets, 0)
-            embed_seq = torch.as_tensor(embed_seq)
+            # combine and store
+            embed_seq = torch.cat((embed_seq, paddings), dim=0)
             batch_embed_seq.append(embed_seq)
         batch_embed_output = torch.stack(batch_embed_seq, 0).to(self.device)
         return batch_embed_output
@@ -212,7 +226,7 @@ class Decoder(nn.Module):
         self.n_items = num_item
         self.attention = attention
 
-        if self.attention == 'attention':
+        if self.attention:
             self.W_repeat = nn.Linear(hidden_size, hidden_size, bias=False)
             self.U_repeat = nn.Linear(hidden_size, hidden_size, bias=False)
             self.tanh = nn.Tanh()
@@ -226,7 +240,7 @@ class Decoder(nn.Module):
 
     def forward(self, all_memory, last_memory, item_seq, mask=None):
         '''item_seq is the appared items or candidate items'''
-        if self.attention == 'attention':
+        if self.attention:
             all_memory_values, last_memory_values = all_memory, last_memory
             all_memory = self.dropout(self.U_repeat(all_memory))
             last_memory = self.dropout(self.W_repeat(last_memory))
@@ -240,15 +254,13 @@ class Decoder(nn.Module):
                 output_er.masked_fill_(mask, -1e9)
 
             output_er = output_er.unsqueeze(-1)
-
-            alpha_r = nn.Softmax(dim=1)(output_er)
+            # optimized softmax output
+            alpha_r = F.softmax(output_er, dim=1)
             alpha_r = alpha_r.repeat(1, 1, self.hidden_size)
-            output_r = (all_memory_values*alpha_r).sum(dim=1)
+            output_r = torch.sum(all_memory_values*alpha_r, dim=1)
             output_r = torch.cat([output_r, last_memory_values], dim=1)
             output_r = self.dropout(self.Repeat(output_r))
 
-            # repeat_mask = get_candidate_mask(item_seq, self.device, self.n_items)
-            # output_r = output_r.masked_fill(repeat_mask.bool(), float('-inf'))
             decoder = torch.sigmoid(output_r)
         else:
             decoder = torch.sigmoid(self.dropout(self.Repeat(last_memory)))
