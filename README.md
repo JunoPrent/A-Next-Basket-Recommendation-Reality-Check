@@ -1,4 +1,4 @@
-For RQ1, all code was written by us and it can be found in the "dataset_ext" folder. See the README.md file in this folder for more information.
+For RQ2, all code was written by us and it can be found in the "dataset_ext" folder. See the README.md file in this folder for more information.
 
 For RQ3, extensions to the code were made in evaluation/model_performance.py and methods/dream/basket_dataloader.py. The start and end of all new sections of code are marked with comments starting with '###'. No original code was removed from these files.
 
