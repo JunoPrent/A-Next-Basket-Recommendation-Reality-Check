@@ -12,21 +12,15 @@ def avg_dataset_baskets(data_history_dict):
 class BasketDataset(Dataset):
 
     def __init__(self, config, mode='train'):
+        self.use_item_order = config['use_item_order']
         # load data.
-
         train_file = config['train_file']
-        train_addorder_file = config['train_addorder_file']
         tgt_file = config['tgt_file']
-        tgt_addorder_file = config['tgt_addorder_file']
         data_config_file = config['data_config_file']
         with open(train_file, 'r') as f:
             data_all = json.load(f)
-        with open(train_addorder_file, 'r') as f:
-            train_addorder_all = json.load(f)
         with open(tgt_file, 'r') as f:
             tgt_all = json.load(f)
-        with open(tgt_addorder_file, 'r') as f:
-            tgt_addorder_all = json.load(f)
         with open(data_config_file, 'r') as f:
             data_config = json.load(f)
 
@@ -34,9 +28,19 @@ class BasketDataset(Dataset):
         self.mode = mode
         # Could do some filtering here
         self.data = []
-        self.data_addorder = []
         self.tgt = []
-        self.tgt_addorder = []
+
+        #### item add-order extension ####
+        if self.use_item_order:
+            train_addorder_file = config['train_addorder_file']
+            tgt_addorder_file = config['tgt_addorder_file']
+            with open(train_addorder_file, 'r') as f:
+                train_addorder_all = json.load(f)
+            with open(tgt_addorder_file, 'r') as f:
+                tgt_addorder_all = json.load(f)
+            self.data_addorder = []
+            self.tgt_addorder = []
+        ######
         
         ### Start of extension
         ## Use this to get users with at least the average amount of baskets
@@ -54,24 +58,33 @@ class BasketDataset(Dataset):
             ### End of extension
 
             self.data.append(data_all[user][1:-1])
-            self.data_addorder.append(train_addorder_all[user][1:-1])
             # use index 1 since future files only contain 1 basket per user
             self.tgt.append(tgt_all[user][1])
-            self.tgt_addorder.append(tgt_addorder_all[user][1])
+            if config['use_item_order']:
+                self.data_addorder.append(train_addorder_all[user][1:-1])
+                self.tgt_addorder.append(tgt_addorder_all[user][1])
         self.user_sum = len(self.data)
         self.repeat_candidates = get_repeat_candidates(self.data)
         # optimized candidates funciton in candidates.py
         self.explore_candidates = get_explore_candidates(self.data, self.total_num)
 
     def __getitem__(self, ind):
-        return self.data[ind], self.tgt[ind], \
-               self.repeat_candidates[ind], self.explore_candidates[ind], \
-               self.data_addorder[ind], self.tgt_addorder[ind]
-
+        if self.use_item_order:
+            return self.data[ind], self.tgt[ind], \
+                self.repeat_candidates[ind], self.explore_candidates[ind], \
+                self.data_addorder[ind], self.tgt_addorder[ind]
+        else:
+            return self.data[ind], self.tgt[ind], \
+                self.repeat_candidates[ind], self.explore_candidates[ind], None, None
+        
     def get_batch_data(self, s, e):
-        return self.data[s:e], self.tgt[s:e], \
-               self.repeat_candidates[s:e], self.explore_candidates[s:e], \
-               self.data_addorder[s:e], self.tgt_addorder[s:e]
+        if self.use_item_order:
+            return self.data[s:e], self.tgt[s:e], \
+                self.repeat_candidates[s:e], self.explore_candidates[s:e], \
+                self.data_addorder[s:e], self.tgt_addorder[s:e]
+        else:
+            return self.data[s:e], self.tgt[s:e], \
+                self.repeat_candidates[s:e], self.explore_candidates[s:e], None, None
 
     def __len__(self):
         return self.user_sum

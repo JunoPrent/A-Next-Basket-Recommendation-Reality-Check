@@ -1,6 +1,80 @@
-For RQ3, extensions to the code were made in evaluation/model_performance.py and methods/dream/basket_dataloader.py. The start and end of all new sections of code are marked with comments starting with '###'. No original code was removed from these files.
+# DREAM and 'A NBR Reality Check' 
+## <b>Reproduction and extension information </b>
+For RQ1 regarding the item addition-order on Instacart, all the required files and their updated arguments can be found in the 'itemorder_inclusion_extension.ipynb'. Many updates to all the files required for the complete preprocessing, training and evaluation pipeline were made. The most relevant parts for the extensions are highlighted with lines of '#'. All the required files and the commands are described in order:
+1. Download the three original Instacart files as described by the 'Reality Check' authors, to the '/DataSource/instacart' folder
+    - order_products__prior.csv
+    - order_products__train.csv
+    - orders.csv
+2. Recreate the instacart dataset with item add-order included
+    - --use_item_order: include the the add-order information
+    - Output is two '.csv' files in the '/dataset' folder
+        - instacart_itemorder_history.csv
+        - instacart_itemorder_future.csv
+    - And four '.json' files in the '/jsondata' folder
+        - instacart_itemorder_history.csv
+        - instacart_itemorder_future.csv
+        - instacart_itemorder_orders_history.csv
+        - instacart_itemorder_orders_future.csv
+```
+cd preprocess
+python ./instacart.py --use_item_order
+```
+3. Create 5 new datasplits (folds) for the new 'instacart_itemorder' dataset
+    - --use_item_order: include to store the maximum position for the embedding layer in the keyset files as in the original implementation for the item embedding
+    - --fold_id: specify the keyset fold and the command below should be ran 5 times with the folds [0,1,2,3,4]
+
+```
+python keyset_fold.py --dataset instacart_itemorder --fold_id 0 --use_item_order
+```
+4. Train the models both with and without the item order embedding.
+    - --dataset: to specify the dataset
+    - --use_attention: to train the models with attention
+    - --use_item_order: to train the models with the extra item add-order embedding
+    - Repeat the commands below for the 5 folds
+    - Output per command consists of a trained model in the 'methods/models/' folder
+
+```
+cd methods
+python dream/trainer.py --dataset instacart_itemorder --fold_id 0 --use_attention --use_item_order
+python dream/trainer.py --dataset instacart_itemorder --fold_id 0 --use_attention 
+```
+
+5. Make predictions with the models
+    - --dataset: specify the dataset on which the models were trained
+    - --checkpoint_path: include the model checkpoint to the models trained with item order dataset and item order embedding. If not included, the most recent model with the specified dataset and fold_id is used. Provided paths are to models not included in the repository, update them with your trained models.
+    - The usage of attention is deduced from the layers in the checkpoint which are required for attention
+    - The usage of the item order embedding layer is similarly set based on if the embedding layer is present in the loaded checkpoint
+    - The command below should be ran for all 5 folds
+    - Output per command consist of a '.json' file in the 'methods/dream/pred/' folder
+
+```
+cd methods
+
+python dream/pred_results.py --dataset instacart_itemorder --fold_id 0 --checkpoint_path models/instacart/instacart_itemorder-recall20-0-0-attention-itemorder-Jun-27-2023_07-14-04.pth
+
+python dream/pred_results.py --dataset instacart_itemorder --fold_id 0 --checkpoint_path models/instacart/instacart_itemorder-recall20-0-0-attention--Jun-27-2023_05-24-14.pth
+```
+6. Calculate the performance for the predictions made with the add-order models the models without the add-order included
+    - --datasets: specify the datasets for which prediction files are present. Use the argument like '--datasets instacart_itemorder instacart tafeng'. If not specified all prediction files corresponding to the attention and item order and folds are used.
+    - --use_attention: used for looking up the correct prediction files
+    - --use_item_order: similar for prediction file lookup
+    - Output per command is a '.txt' file in the '/evaluation/' folder with the results of the performance metrics
+
+```
+cd evaluation
+python model_performance.py --pred_folder ../methods/pred --fold_list [0,1,2,3,4] --datasets instacart_itemorder --use_attention --use_item_order
+
+python model_performance.py --pred_folder ../methods/pred --fold_list [0,1,2,3,4] --datasets instacart_itemorder --use_attention
+```
+--- 
+For RQ3, extensions to the code were made in evaluation/model_performance.py and methods/dream/basket_dataloader.py. The start and end of all new sections of code are marked with comments starting with '###'. The layout of the commands described for RQ1 is used. Only the layout so not with the new dataset and item order. 
 
 For RQ4 all the code was written by us and it can be found in "fairness metrics.ipynb"
+
+## Orignal README information:
+Regarding the reproduction of the original results, only the keyfold-creation and DREAM sections are relevant. Using the original documentation below together with the 5 key folds and some simple changes such as optimization of functions or using different paths, we succesfuly reproduced the performance results stated in the 'Reality Check' paper.
+
+---
 
 # Source Code and Appendix for "A Next Basket Recommendation Reality Check"
 
@@ -112,11 +186,11 @@ Dream is under the folder "methods/dream".
 * Step 1: Check the file path of the dataset in the config-param file "{dataset}conf.json"
 * Step 2: Train and save the model using the following commands:
 ```
-python trainer.py --dataset dunnhumby --fold_id 0 --attention 1
+python trainer.py --dataset dunnhumby --fold_id 0 --use_attention
 ...
-python trainer.py --dataset tafeng --fold_id 0 --attention 1
+python trainer.py --dataset tafeng --fold_id 0 --use_attention
 ...
-python trainer.py --dataset instacart --fold_id 0 --attention 1
+python trainer.py --dataset instacart --fold_id 0 --use_attention
 ...
 ```
 * Step 3: Predict and save the results using the following commands:

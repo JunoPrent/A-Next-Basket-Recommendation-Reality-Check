@@ -54,11 +54,17 @@ class NBRNet(nn.Module):
 
         # device setting
         self.device = config['device']
+        self.use_item_order = config['use_item_order']
 
         # dataset features
         self.n_items = dataset['item_num']
-        # get the maxium position of addorder for the embedding
-        self.max_addorder = dataset['max_addorder']
+
+        # get the maxium position of addorder for the order embedding
+        if self.use_item_order:
+            self.max_addorder = dataset['max_addorder']
+        else:
+            self.max_addorder = None
+        
         # model parameters
         self.embedding_size = config['embedding_size']
         self.embedding_type = config['embedding_type']
@@ -67,7 +73,6 @@ class NBRNet(nn.Module):
         self.max_len = config['max_len'] # basket len
         self.loss_mode = config['loss_mode']
         self.loss_uplift = config['loss_uplift']
-        self.use_item_order = config['use_item_order']
         # define layers
         # self.item_embedding = nn.Embedding(self.n_items, self.embedding_size, self.max_len)
         self.basket_embedding = Basket_Embedding(self.device, self.embedding_size, self.n_items, self.max_len, self.use_item_order, self.max_addorder, self.embedding_type)
@@ -103,8 +108,10 @@ class NBRNet(nn.Module):
         for b in basket_seq:
             basket_seq_len.append(len(b))
         basket_seq_len = torch.as_tensor(basket_seq_len).to(self.device)
-
-        batch_basket_seq_embed = self.basket_embedding(basket_seq, addorder_seq)
+        if addorder_seq:
+            batch_basket_seq_embed = self.basket_embedding(basket_seq, addorder_seq)
+        else:
+            batch_basket_seq_embed = self.basket_embedding(basket_seq)
 
         all_memory, _ = self.gru(batch_basket_seq_embed)
         last_memory = self.gather_indexes(all_memory, basket_seq_len-1)
@@ -168,7 +175,7 @@ class NBRNet(nn.Module):
 # Provide basket embedding solution: max, mean, sum
 class Basket_Embedding(nn.Module):
 
-    def __init__(self, device, hidden_size, item_num, max_len, use_item_order, max_addorder, type): # hidden_size is the embedding_size
+    def __init__(self, device, hidden_size, item_num, max_len, use_item_order, max_addorder=None, type='mean'): # hidden_size is the embedding_size
         super(Basket_Embedding, self).__init__()
         self.hidden_size = hidden_size
         self.n_items = item_num
@@ -181,37 +188,56 @@ class Basket_Embedding(nn.Module):
         if self.use_item_order:
             self.addorder_embedding = nn.Embedding(max_addorder, hidden_size)  # Embedding for positional information
 
-    def forward(self, batch_basket, batch_addorder):
-        ##### new and optimized code #####
+    def forward(self, batch_basket, batch_addorder=None):
         batch_embed_seq = [] # batch * seq_len * hidden size
-        for basket_seq, add_seq in zip(batch_basket, batch_addorder):
-            embed_baskets = []
-            for basket, addorder in zip(basket_seq, add_seq):
-                # add new dimension for embedding lookup
-                basket = torch.LongTensor(basket).unsqueeze(0).to(self.device)
-                # get item embedding vector and get rid of added dimension
-                basket = self.item_embedding(basket).squeeze(0)
-                if self.use_item_order:
-                    addorder = torch.LongTensor(addorder).unsqueeze(0).to(self.device)
-                    addorder = self.addorder_embedding(addorder).squeeze(0)
-                    # combine item embedding with itemorder (addorder) embedding
-                    basket += addorder
-                # pooling operation
-                if self.type == 'mean':
-                    embed_baskets.append(torch.mean(basket, 0))
-                if self.type == 'max':
-                    embed_baskets.append(torch.max(basket, 0)[0])
-                if self.type == 'sum':
-                    embed_baskets.append(torch.sum(basket, 0))
-            # optimized padding
-            pad_num = self.max_len - len(embed_baskets)
-            # create tensor with all padding rows for the basket
-            paddings = torch.zeros(pad_num, self.hidden_size).to(self.device)
-            # convert list with item embeddings to tensor with same dimensions
-            embed_seq = torch.stack(embed_baskets, 0)
-            # combine and store
-            embed_seq = torch.cat((embed_seq, paddings), dim=0)
-            batch_embed_seq.append(embed_seq)
+        ##### new code for item add-order extension #####
+        if self.use_item_order:
+            for basket_seq, add_seq in zip(batch_basket, batch_addorder):
+                embed_baskets = []
+                for basket, addorder in zip(basket_seq, add_seq):
+                    # add new dimension for embedding lookup
+                    basket = torch.LongTensor(basket).unsqueeze(0).to(self.device)
+                    # get embedding vectors for all items in the basket and get rid of added dimension (torch.Variable() is not required anymore)
+                    basket = self.item_embedding(basket).squeeze(0)
+                    if self.use_item_order:
+                        # combine item embeddings with item addorder embeddings
+                        addorder = torch.LongTensor(addorder).unsqueeze(0).to(self.device)
+                        addorder = self.addorder_embedding(addorder).squeeze(0)
+                        basket += addorder
+                    # pooling operation
+                    if self.type == 'mean':
+                        embed_baskets.append(torch.mean(basket, 0))
+                    if self.type == 'max':
+                        embed_baskets.append(torch.max(basket, 0)[0])
+                    if self.type == 'sum':
+                        embed_baskets.append(torch.sum(basket, 0))
+                # optimized padding
+                pad_num = self.max_len - len(embed_baskets)
+                # create tensor with all padding rows for the basket
+                paddings = torch.zeros(pad_num, self.hidden_size).to(self.device)
+                # convert list with item embeddings to tensor with same dimensions
+                embed_seq = torch.stack(embed_baskets, 0)
+                # combine and store
+                embed_seq = torch.cat((embed_seq, paddings), dim=0)
+                batch_embed_seq.append(embed_seq)
+        else:
+            #### no item add order, use default implementation of basket embedding (only optimized the code)
+            for basket_seq in batch_basket:
+                embed_baskets = []
+                for basket in basket_seq:
+                    basket = torch.LongTensor(basket).unsqueeze(0).to(self.device)
+                    basket = self.item_embedding(basket).squeeze(0)
+                    if self.type == 'mean':
+                        embed_baskets.append(torch.mean(basket, 0))
+                    if self.type == 'max':
+                        embed_baskets.append(torch.max(basket, 0)[0])
+                    if self.type == 'sum':
+                        embed_baskets.append(torch.sum(basket, 0))
+                pad_num = self.max_len - len(embed_baskets)
+                paddings = torch.zeros(pad_num, self.hidden_size).to(self.device)
+                embed_seq = torch.stack(embed_baskets, 0)
+                embed_seq = torch.cat((embed_seq, paddings), dim=0)
+                batch_embed_seq.append(embed_seq)
         batch_embed_output = torch.stack(batch_embed_seq, 0).to(self.device)
         return batch_embed_output
 
